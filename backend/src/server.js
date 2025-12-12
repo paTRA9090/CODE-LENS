@@ -1,10 +1,8 @@
-// backend/src/server.js
 import express from "express";
 import dotenv from "dotenv";
 import path from "path";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import { createProxyMiddleware } from "http-proxy-middleware";
 
 import authRoutes from "./routes/auth.route.js";
 import userRoutes from "./routes/user.route.js";
@@ -12,15 +10,16 @@ import chatRoutes from "./routes/chat.route.js";
 import { connectDB } from "./config/db.js";
 
 dotenv.config();
+
 const app = express();
+
+// Render provides PORT automatically
 const PORT = process.env.PORT || 5001;
 
-const VITE_DEV_SERVER = process.env.VITE_SERVER || "http://localhost:5173";
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || VITE_DEV_SERVER;
-
+// CORS (OK for local dev. In prod the frontend is served by backend → no CORS needed)
 app.use(
   cors({
-    origin: FRONTEND_ORIGIN,
+    origin: "http://localhost:5173",
     credentials: true,
   })
 );
@@ -28,48 +27,30 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 
+// API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/chat", chatRoutes);
 
+// ---------- PRODUCTION FRONTEND SERVING ----------
 const __dirname = path.resolve();
 
-if (process.env.NODE_ENV === "production") {
-  // serve built frontend
-  app.use(express.static(path.join(__dirname, "../frontend/dist")));
+// Since server.js is in backend/src/, go up TWO levels → root folder → frontend/dist
+const frontendDistPath = path.join(__dirname, "..", "..", "frontend", "dist");
 
-  // use '/*' instead of '*' to avoid path-to-regexp error
+if (process.env.NODE_ENV === "production") {
+  app.use(express.static(frontendDistPath));
+
+  // SAFE catch-all route
   app.get("/*", (req, res) => {
-    res.sendFile(path.join(__dirname, "../frontend", "dist", "index.html"));
+    res.sendFile(path.join(frontendDistPath, "index.html"));
   });
-} else {
-  // DEV: proxy to Vite dev server so you can open backend port and see frontend (HMR preserved)
-  app.use(
-    "/",
-    createProxyMiddleware({
-      target: VITE_DEV_SERVER,
-      changeOrigin: true,
-      ws: true,
-      logLevel: "info",
-      onError(err, req, res) {
-        res.writeHead(502, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(
-          `<html><body style="font-family:system-ui, Arial;">
-            <h2>Frontend dev server not available</h2>
-            <p>Express tried to proxy to <code>${VITE_DEV_SERVER}</code> but couldn't reach it.</p>
-            <p>Start frontend: <code>cd frontend && npm run dev</code></p>
-          </body></html>`
-        );
-      },
-    })
-  );
 }
+// --------------------------------------------------
 
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-  connectDB().catch((err) => {
-    console.error("DB connect failed:", err);
-  });
+  console.log(`Server running on port ${PORT}`);
+  connectDB();
 });
 
 
